@@ -86,19 +86,17 @@ namespace TalisScrapeTest.Controllers
 
 
 
-            var listScrapeReport = _scraper.FetchScrapeReport();
+            var listScrapeReport = _scraper.FetchLastScrapeReport();
 
             if (listScrapeReport != null)
                 _scrapeHub.Clients.Group("scrapeReports").doReport(listScrapeReport.ToJson());
-            
 
-            ScrapeReport bookScrapeReport;
 
             if (lists.HasContent())
             {
                 var tst =_scraper.PopulateReadingLists(lists);
 
-                bookScrapeReport = _scraper.FetchScrapeReport();
+                var bookScrapeReport = _scraper.FetchLastScrapeReport();
 
                 if (bookScrapeReport != null)
                     _scrapeHub.Clients.Group("scrapeReports").doReport(bookScrapeReport.ToJson());

@@ -85,6 +85,10 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
+    <Page Include="Pages\Scrape\Reports.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
     <Page Include="Pages\Scrape\Scrape.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
@@ -102,6 +106,9 @@
     </Compile>
     <Compile Include="Pages\Log\Log.xaml.cs">
       <DependentUpon>Log.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Pages\Scrape\Reports.xaml.cs">
+      <DependentUpon>Reports.xaml</DependentUpon>
     </Compile>
     <Compile Include="Pages\Scrape\Scrape.xaml.cs">
       <DependentUpon>Scrape.xaml</DependentUpon>

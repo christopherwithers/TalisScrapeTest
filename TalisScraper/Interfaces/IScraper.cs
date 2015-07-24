@@ -92,6 +92,18 @@ namespace TalisScraper.Interfaces
         /// Fetchs a report detailing statistics of the last scrape done
         /// </summary>
         /// <returns>A scrape report object</returns>
-        ScrapeReport FetchScrapeReport();
+        ScrapeReport FetchLastScrapeReport();
+
+        /// <summary>
+        /// Fetchs a report detailing statistics of the last scrape done at the requested DateTime
+        /// </summary>
+        /// <returns>A scrape report object</returns>
+        ScrapeReport FetchScrapeReport(DateTime dateTime);
+
+        /// <summary>
+        /// Fetchs all reports for scrapes in the current application session
+        /// </summary>
+        /// <returns>A Dictionary containing scrape report objects against date and time of scrape</returns>
+        IDictionary<DateTime, ScrapeReport> FetchAllScrapeReports();
     }
 }

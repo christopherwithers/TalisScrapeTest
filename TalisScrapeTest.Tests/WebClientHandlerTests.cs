@@ -65,6 +65,8 @@ namespace TalisScrapeTest.Tests
         [TearDown]
         public void TearDown()
         {
+            _moqWebClientHandler = null;
+            _webClientHandler = null;
         }
     }
 }

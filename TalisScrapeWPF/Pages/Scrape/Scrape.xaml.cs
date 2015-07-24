@@ -29,8 +29,7 @@ namespace TalisScrapeWPF.Pages.Scrape
 
         private void ScraperOnResourceScraped(object sender, ResourceScrapedEventArgs args)
         {
-            Test.Text = Test.Text.Insert(0, string.Format("Scraped: {0} (from cache: {1})\n", args.URI, args.FromCache));
-            
+            Test.Text = Test.Text.Insert(0, string.Format("Scraped: {0} (from cache: {1})\n", args.URI, args.FromCache));  
         }
 
         private void ScraperOnScrapeEnded(object sender, ScrapeEndedEventArgs args)

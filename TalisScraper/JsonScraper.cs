@@ -42,6 +42,8 @@ namespace TalisScraper
 
         //todo: Have a collection of reports stored from current app start? Perhaps each scrape has a guid or UID, and report stored against that? Might help for DB storage.
         private ScrapeReport _scrapeReport = null;
+
+        private readonly Dictionary<DateTime, ScrapeReport> _reports; 
         #endregion
 
         public JsonScraper(IRequestHandler requestHandler, ScrapeConfig scrapeConfig = null)
@@ -51,6 +53,8 @@ namespace TalisScraper
             _scrapeConfig = scrapeConfig;
 
             _stopwatch = new Stopwatch();
+
+            _reports = new Dictionary<DateTime, ScrapeReport>();
         }
 
         public ILogger Log { get; set; }
@@ -66,6 +70,80 @@ namespace TalisScraper
         #endregion
 
         #region Async Functions
+
+        public async Task<IEnumerable<string>> ScrapeReadingListsAsync(string root)
+        {
+            if (string.IsNullOrEmpty(root))
+            {
+                Log.Error("Could not initiate scrape. The root node address was empty.");
+                return null;
+            }
+
+            const ScrapeType scrapeType = ScrapeType.ReadingList;
+
+            if (!ScrapeInitiation(scrapeType))
+                return null;
+
+            var lists = new List<string>();
+
+            if (_scrapeConfig != null && _scrapeConfig.EnableParallelProcessing)
+            {
+                var listsP = new ConcurrentBag<string>();
+
+                await RecParseParallelAsync(root, listsP);
+
+                lists = listsP.ToList();
+            }
+            else
+            {
+                await RecParseAsync(root, lists);
+            }
+
+            ScrapeCleanup(scrapeType);
+
+            return lists;
+        }
+
+        public async Task<NavItem> FetchNavItemAsync(string uri)
+        {
+            const ScrapeType scrapeType = ScrapeType.Item;
+
+            if (!ScrapeInitiation(scrapeType))
+                return null;
+
+            var items = await FetchItemsInternalAsync(uri);
+
+            ScrapeCleanup(scrapeType);
+
+            return items;
+        }
+
+        public async Task<IEnumerable<ReadingList>> PopulateReadingListsAsync(IEnumerable<string> readingLists)
+        {
+            if (!readingLists.HasContent())
+            {
+                Log.Error("Attempted to populate reading lists, but passed in list object was null.");
+                return null;
+            }
+
+            const ScrapeType scrapeType = ScrapeType.Books;
+
+            if (!ScrapeInitiation(scrapeType))
+                return null;
+
+            IEnumerable<ReadingList> readingListsFinal;
+
+            if (_scrapeConfig != null && _scrapeConfig.EnableParallelProcessing)
+                readingListsFinal = await DoPopulateReadingListsParallelAsync(readingLists);
+            else
+                readingListsFinal = await DoPopulateReadingListsAsync(readingLists);
+
+            ScrapeCleanup(scrapeType);
+
+            return readingListsFinal;
+        }
+
+
         /// <summary>
         /// Fetches json object from the specified uri using async
         /// </summary>
@@ -110,145 +188,6 @@ namespace TalisScraper
             }
 
             return basObj;
-        }
-
-        public async Task<NavItem> FetchNavItemAsync(string uri)
-        {
-            if (_scrapeInProgress)
-                return null;
-
-            _scrapeInProgress = true;
-            _scrapeCancelled = false;
-
-            if (ScrapeStarted != null) ScrapeStarted(this, new ScrapeStartedEventArgs(ScrapeType.ReadingList));
-
-            var items = await FetchItemsInternalAsync(uri);
-
-            if (ScrapeEnded != null) ScrapeEnded(this, new ScrapeEndedEventArgs(ScrapeType.ReadingList));
-
-            _scrapeInProgress = false;
-
-            return items;
-        }
-
-        private async Task RecParseAsync(string loc, List<string> list)
-        {
-            if (_scrapeCancelled)
-                return;
-
-           // await Task.Yield();
-            var items = await FetchItemsInternalAsync(loc);
-
-            if (items != null)
-            {
-                foreach (var ou in items.Items.OrganizationalUnit ?? new Element[] {})
-                {
-                    await RecParseAsync(string.Format("{0}.json", ou.Value), list);
-                }
-
-                foreach (var ou in items.Items.KnowledgeGrouping ?? new Element[] { })
-                {
-                    await RecParseAsync(string.Format("{0}.json", ou.Value), list);
-                }
-
-                if (items.Items.UsesList.HasContent())
-                {
-                    list.AddRange(items.Items.UsesList.Select(n => n.Value));
-                }
-            }
-        }
-
-        private async Task RecParseParallelAsync(string loc, ConcurrentBag<string> list)
-        {
-            if (_scrapeCancelled)
-                return;
-
-            var items = await FetchItemsInternalAsync(loc);
-
-            if (items != null)
-            {
-                if (items.Items.OrganizationalUnit.HasContent())
-                {
-                    Parallel.ForEach(items.Items.OrganizationalUnit, async (item, state) =>
-                    {
-                        await RecParseParallelAsync(string.Format("{0}.json", item.Value), list);
-                    });
-                }
-
-                if (items.Items.KnowledgeGrouping.HasContent())
-                {
-                    Parallel.ForEach(items.Items.KnowledgeGrouping, async (item, state) =>
-                    {
-                        await RecParseParallelAsync(string.Format("{0}.json", item.Value), list);
-                    });
-                }
-
-                if (items.Items.UsesList.HasContent())
-                {
-                    Parallel.ForEach(items.Items.UsesList, (item, state) =>
-                    {
-                        list.Add(item.Value);
-                    });
-                }
-            }
-        }
-
-        public async Task<IEnumerable<string>> ScrapeReadingListsAsync(string root)
-        {
-            if (string.IsNullOrEmpty(root))
-            {
-                Log.Error("Could not initiate scrape. The root node address was empty.");
-                return null;
-            }
-
-            const ScrapeType scrapeType = ScrapeType.ReadingList;
-
-            if (!ScrapeInitiation(scrapeType))
-                return null;
-
-            var lists = new List<string>();
-
-            if (_scrapeConfig != null && _scrapeConfig.EnableParallelProcessing)
-            {
-                var listsP = new ConcurrentBag<string>();
-
-                await RecParseParallelAsync(root, listsP);
-
-                lists = listsP.ToList();
-            }
-            else
-            {
-                await RecParseAsync(root, lists);
-            }
-
-            ScrapeCleanup(scrapeType);
-
-            return lists;
-        }
-
-        public async Task<IEnumerable<ReadingList>> PopulateReadingListsAsync(IEnumerable<string> readingLists)
-        {
-            if (!readingLists.HasContent())
-            {
-                Log.Error("Attempted to populate reading lists, but passed in list object was null.");
-                return null;
-            }
-
-            const ScrapeType scrapeType = ScrapeType.Books;
-
-            if (!ScrapeInitiation(scrapeType))
-                return null;
-
-            IEnumerable<ReadingList> readingListsFinal;
-
-            if (_scrapeConfig != null && _scrapeConfig.EnableParallelProcessing)
-                readingListsFinal = await DoPopulateReadingListsParallelAsync(readingLists);
-            else
-                readingListsFinal = await DoPopulateReadingListsAsync(readingLists);
-
-            ScrapeCleanup(scrapeType);
-
-            return readingListsFinal;
         }
 
         private async Task<IEnumerable<ReadingList>> DoPopulateReadingListsAsync(IEnumerable<string> readingLists)
@@ -382,9 +321,144 @@ namespace TalisScraper
             return readingListCollection.ToList();
         }
 
+        private async Task RecParseAsync(string loc, List<string> list)
+        {
+            if (_scrapeCancelled)
+                return;
+
+           // await Task.Yield();
+            var items = await FetchItemsInternalAsync(loc);
+
+            if (items != null)
+            {
+                foreach (var ou in items.Items.OrganizationalUnit ?? new Element[] {})
+                {
+                    await RecParseAsync(string.Format("{0}.json", ou.Value), list);
+                }
+
+                foreach (var ou in items.Items.KnowledgeGrouping ?? new Element[] { })
+                {
+                    await RecParseAsync(string.Format("{0}.json", ou.Value), list);
+                }
+
+                if (items.Items.UsesList.HasContent())
+                {
+                    list.AddRange(items.Items.UsesList.Select(n => n.Value));
+                }
+            }
+        }
+
+        private async Task RecParseParallelAsync(string loc, ConcurrentBag<string> list)
+        {
+            if (_scrapeCancelled)
+                return;
+
+            var items = await FetchItemsInternalAsync(loc);
+
+            if (items != null)
+            {
+                if (items.Items.OrganizationalUnit.HasContent())
+                {
+                    Parallel.ForEach(items.Items.OrganizationalUnit, async (item, state) =>
+                    {
+                        await RecParseParallelAsync(string.Format("{0}.json", item.Value), list);
+                    });
+                }
+
+                if (items.Items.KnowledgeGrouping.HasContent())
+                {
+                    Parallel.ForEach(items.Items.KnowledgeGrouping, async (item, state) =>
+                    {
+                        await RecParseParallelAsync(string.Format("{0}.json", item.Value), list);
+                    });
+                }
+
+                if (items.Items.UsesList.HasContent())
+                {
+                    Parallel.ForEach(items.Items.UsesList, (item, state) =>
+                    {
+                        list.Add(item.Value);
+                    });
+                }
+            }
+        }
         #endregion
 
         #region Sync Functions
+        public NavItem FetchNavItem(string uri)
+        {
+            const ScrapeType scrapeType = ScrapeType.Item;
+
+            if (!ScrapeInitiation(scrapeType))
+                return null;
+
+            var items = FetchItemsInternal(uri);
+
+            ScrapeCleanup(scrapeType);
+
+            return items;
+        }
+
+        public IEnumerable<string> ScrapeReadingLists(string root)
+        {
+            if (string.IsNullOrEmpty(root))
+            {
+                Log.Fatal("Scraper.ParseTest: Could not initiate scrape. The root node address was empty.");
+                return null;
+            }
+
+            const ScrapeType scrapeType = ScrapeType.ReadingList;
+
+            if (!ScrapeInitiation(scrapeType))
+                return null;
+
+            var lists = new List<string>();
+
+
+            if (_scrapeConfig != null && _scrapeConfig.EnableParallelProcessing)
+            {
+                var listP = new ConcurrentBag<string>();
+                RecParseParallel(root, listP);
+
+                lists = listP.ToList();
+            }
+            else
+            {
+                RecParse(root, ref lists);
+            }
+
+            ScrapeCleanup(scrapeType);
+
+            return lists;
+        }
+        //todo: how does cancel scrape fit into this? Might pass a prescraped collection in, so can't assume we outright cancel it
+        public IEnumerable<ReadingList> PopulateReadingLists(IEnumerable<string> readingLists)
+        {//scrape lists from passed in uri collection of lists
+
+            if (!readingLists.HasContent())
+            {
+                Log.Error("Attempted to populate reading lists, but passed in list object was null.");
+                return null;
+            }
+
+            const ScrapeType scrapeType = ScrapeType.Books;
+
+            if (!ScrapeInitiation(scrapeType))
+                return null;
+
+            IEnumerable<ReadingList> readingListsFinal;
+
+            if (_scrapeConfig != null && _scrapeConfig.EnableParallelProcessing)
+                readingListsFinal = DoPopulateReadingListsParallel(readingLists);
+            else
+                readingListsFinal = DoPopulateReadingLists(readingLists);
+
+            ScrapeCleanup(scrapeType);
+
+            return readingListsFinal;
+        }
+
+
         /// <summary>
         /// Fetches json object from the specified uri
         /// </summary>
@@ -403,28 +477,6 @@ namespace TalisScraper
             if (ResourceScraped != null) ResourceScraped(this, new ResourceScrapedEventArgs(uri));
 
             return json;
-        }
-
-        private NavItem NavItemParser(string json)
-        {
-            if (string.IsNullOrEmpty(json))
-                return null;
-
-            var replaceRootRegex = new Regex(RootRegex);
-
-            var finalJson = replaceRootRegex.Replace(json, "\"root\"", 1);
-            NavItem convertedNav = null;
-
-            try
-            {
-                convertedNav = JsonConvert.DeserializeObject<NavItem>(finalJson);
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex);
-            }
-
-            return convertedNav;
         }
 
         /// <summary>
@@ -454,20 +506,7 @@ namespace TalisScraper
 
             return basObj;
         }
-
-        public NavItem FetchNavItem(string uri)
-        {
-            const ScrapeType scrapeType = ScrapeType.Item;
-
-            if (!ScrapeInitiation(scrapeType))
-                return null;
-
-            var items = FetchItemsInternal(uri);
-
-            ScrapeCleanup(scrapeType);
-
-            return items;
-        }
+       
 
         private void RecParse(string loc, ref List<string> list)
         {
@@ -531,39 +570,6 @@ namespace TalisScraper
                 }
             }
 
-        }
-
-        public IEnumerable<string> ScrapeReadingLists(string root)
-        {
-            if (string.IsNullOrEmpty(root))
-            {
-                Log.Fatal("Scraper.ParseTest: Could not initiate scrape. The root node address was empty.");
-                return null;
-            }
-
-            const ScrapeType scrapeType = ScrapeType.ReadingList;
-
-            if (!ScrapeInitiation(scrapeType))
-                return null;
-
-            var lists = new List<string>();
-
-
-            if (_scrapeConfig != null && _scrapeConfig.EnableParallelProcessing)
-            {
-                var listP = new ConcurrentBag<string>();
-                RecParseParallel(root, listP);
-
-                lists = listP.ToList();
-            }
-            else
-            {
-                RecParse(root, ref lists);
-            }
-
-            ScrapeCleanup(scrapeType);
-
-            return lists;
         }
 
         private IEnumerable<ReadingList> DoPopulateReadingListsParallel(IEnumerable<string> readingLists)
@@ -696,33 +702,6 @@ namespace TalisScraper
 
             return readingListCollection;
         }
-
-        //todo: how does cancel scrape fit into this? Might pass a prescraped collection in, so can't assume we outright cancel it
-        public IEnumerable<ReadingList> PopulateReadingLists(IEnumerable<string> readingLists)
-        {//scrape lists from passed in uri collection of lists
-
-            if (!readingLists.HasContent())
-            {
-                Log.Error("Attempted to populate reading lists, but passed in list object was null.");
-                return null;
-            }
-
-            const ScrapeType scrapeType = ScrapeType.Books;
-
-            if (!ScrapeInitiation(scrapeType))
-                return null;
-
-            IEnumerable<ReadingList> readingListsFinal;
-
-            if (_scrapeConfig != null && _scrapeConfig.EnableParallelProcessing)
-                readingListsFinal = DoPopulateReadingListsParallel(readingLists);
-            else
-                readingListsFinal = DoPopulateReadingLists(readingLists);
-
-            ScrapeCleanup(scrapeType);
-
-            return readingListsFinal;
-        }
         #endregion
 
         public string DoExport(IEnumerable<ReadingList> readingLists)
@@ -737,6 +716,28 @@ namespace TalisScraper
         }
 
         #region shared functions
+
+        private NavItem NavItemParser(string json)
+        {
+            if (string.IsNullOrEmpty(json))
+                return null;
+
+            var replaceRootRegex = new Regex(RootRegex);
+
+            var finalJson = replaceRootRegex.Replace(json, "\"root\"", 1);
+            NavItem convertedNav = null;
+
+            try
+            {
+                convertedNav = JsonConvert.DeserializeObject<NavItem>(finalJson);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex);
+            }
+
+            return convertedNav;
+        }
 
         /// <summary>
         /// Initiates vars and events prior to starting a scrape
@@ -774,6 +775,7 @@ namespace TalisScraper
 
             if (ScrapeEnded != null) ScrapeEnded(this, new ScrapeEndedEventArgs(type));
 
+            _reports.Add(DateTime.Now, _scrapeReport);
 
             _scrapeInProgress = false;
         }
@@ -786,6 +788,26 @@ namespace TalisScraper
 
             return true;
         }
+
+        public ScrapeReport FetchLastScrapeReport()
+        {
+            return _reports.HasContent() ? _reports.Values.Last() : null;
+        }
+
+        public ScrapeReport FetchScrapeReport(DateTime dateTime)
+        {
+            ScrapeReport scrapeReport;
+
+            _reports.TryGetValue(dateTime, out scrapeReport);
+
+            return scrapeReport;
+        }
+
+        public IDictionary<DateTime, ScrapeReport> FetchAllScrapeReports()
+        {
+            return _reports;
+        }
+
         private Book ParseBookInfoFromJson(string uri, string json)
         {
             var book = new Book();
@@ -893,10 +915,6 @@ namespace TalisScraper
 
 
             return book;
-        }
-        public ScrapeReport FetchScrapeReport()
-        {
-            return _scrapeReport;
         }
         #endregion
     }

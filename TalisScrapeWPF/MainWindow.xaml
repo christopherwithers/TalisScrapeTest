@@ -17,6 +17,7 @@
         <mui:LinkGroup DisplayName="Scrape">
             <mui:LinkGroup.Links>
                 <mui:Link DisplayName="scrape" Source="/Pages/Scrape/Scrape.xaml" />
+                <mui:Link DisplayName="reports" Source="/Pages/Scrape/Reports.xaml" />
             </mui:LinkGroup.Links>
         </mui:LinkGroup>
         <mui:LinkGroup DisplayName="Export">
